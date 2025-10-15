@@ -2,6 +2,8 @@ package com.strangequark.loggerservice;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
@@ -13,6 +15,8 @@ import java.util.concurrent.*;
 
 @Component
 public class DockerLogTailer {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(DockerLogTailer.class);
 
     private final OpenSearchService openSearchService;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -27,11 +31,11 @@ public class DockerLogTailer {
 
     @PostConstruct
     public void start() {
-        new Thread(this::watchContainers, "docker-log-watcher").start();
+        new Thread(() -> watchContainers(), "docker-log-watcher").start();
     }
 
     private void watchContainers() {
-        System.out.println("Watching Docker containers directory: " + DOCKER_LOG_DIR);
+        LOGGER.info("Watching Docker containers directory: " + DOCKER_LOG_DIR);
         try (WatchService watchService = FileSystems.getDefault().newWatchService()) {
             DOCKER_LOG_DIR.register(watchService, StandardWatchEventKinds.ENTRY_CREATE);
 
@@ -55,10 +59,44 @@ public class DockerLogTailer {
     }
 
     private void startTailingIfNeeded(Path containerDir) {
+        LOGGER.info("Container directory detected: " + containerDir);
         Path logFile = containerDir.resolve(containerDir.getFileName().toString() + "-json.log");
-        if (!Files.exists(logFile) || activeTails.containsKey(logFile)) return;
 
-        System.out.println("Starting to tail " + logFile);
+        if (activeTails.containsKey(logFile))
+            return;
+
+        // Watch the container directory for the log file if not present
+        executor.submit(() -> {
+            try {
+                if (Files.exists(logFile)) {
+                    startTail(containerDir, logFile);
+                    return;
+                }
+
+                LOGGER.info("Waiting for log file to appear: {}", logFile);
+                try (WatchService watchService = FileSystems.getDefault().newWatchService()) {
+                    containerDir.register(watchService, StandardWatchEventKinds.ENTRY_CREATE);
+
+                    while (true) {
+                        WatchKey key = watchService.take();
+                        for (WatchEvent<?> event : key.pollEvents()) {
+                            Path created = containerDir.resolve((Path) event.context());
+                            if (created.equals(logFile)) {
+                                startTail(containerDir, logFile);
+                                return;
+                            }
+                        }
+                        key.reset();
+                    }
+                }
+            } catch (Exception e) {
+                LOGGER.error("Error watching container dir {}: {}", containerDir, e.getMessage());
+            }
+        });
+    }
+
+    private void startTail(Path containerDir, Path logFile) {
+        LOGGER.info("Starting to tail {}", logFile);
         Future<?> future = executor.submit(() -> tailFile(containerDir, logFile));
         activeTails.put(logFile, future);
     }
@@ -68,19 +106,19 @@ public class DockerLogTailer {
         String serviceName = resolveServiceName(containerDir);
         try (RandomAccessFile raf = new RandomAccessFile(logFile.toFile(), "r")) {
             // Move to end so we only stream new logs
-            raf.seek(raf.length());
+//            raf.seek(raf.length());
 
             String line;
             while (true) {
                 line = raf.readLine();
                 if (line == null) {
-                    Thread.sleep(500); // wait for new data
+                    Thread.sleep(1000); // wait for new data
                     continue;
                 }
                 processLine(line, containerId, serviceName);
             }
         } catch (Exception e) {
-            System.err.println("Stopped tailing " + logFile + ": " + e.getMessage());
+            LOGGER.info("Stopped tailing " + logFile + ": " + e.getMessage());
         } finally {
             activeTails.remove(logFile);
         }
