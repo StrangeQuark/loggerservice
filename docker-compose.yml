@@ -1,0 +1,54 @@
+services:
+  logger-service:
+    build: .
+    container_name: logger-service
+    user: root
+    privileged: true
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - LOG_SCAN_INTERVAL_MS=2000
+    depends_on:
+      - opensearch
+    ports:
+      - "8088:8088"
+    restart: always
+    networks:
+      - shared-network
+
+  opensearch:
+    image: opensearchproject/opensearch:2.9.0
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+      - OPENSEARCH_DASHBOARDS_PLUGINS_DISABLED=opensearch-reports,opensearch-security
+    ports:
+      - "9200:9200"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    networks:
+      - shared-network
+
+  dashboards:
+    image: opensearchproject/opensearch-dashboards:2.9.0
+    environment:
+      - OPENSEARCH_HOSTS=http://opensearch:9200
+      - OPENSEARCH_SSL_VERIFICATIONMODE=none
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+      - OPENSEARCH_DASHBOARDS_I18N_LOCALE=en
+    ports:
+      - "5601:5601"
+    depends_on:
+      - opensearch
+    networks:
+      - shared-network
+
+networks:
+  shared-network:
+    external: true
