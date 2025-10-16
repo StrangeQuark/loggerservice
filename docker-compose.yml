@@ -15,8 +15,6 @@ services:
     ports:
       - "8088:8088"
     restart: always
-    networks:
-      - shared-network
 
   opensearch:
     image: opensearchproject/opensearch:2.9.0
@@ -31,8 +29,6 @@ services:
       memlock:
         soft: -1
         hard: -1
-    networks:
-      - shared-network
 
   dashboards:
     image: opensearchproject/opensearch-dashboards:2.9.0
@@ -45,9 +41,3 @@ services:
       - "5601:5601"
     depends_on:
       - opensearch
-    networks:
-      - shared-network
-
-networks:
-  shared-network:
-    external: true
