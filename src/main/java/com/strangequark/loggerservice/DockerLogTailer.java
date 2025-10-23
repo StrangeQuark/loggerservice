@@ -108,6 +108,7 @@ public class DockerLogTailer {
         try {
             // Process all existing logs first
             try (Stream<Path> files = Files.list(containerDir)) {
+                LOGGER.info("Processing existing logs: {}", logFile);
                 files.filter(f -> f.getFileName().toString().startsWith(containerDir.getFileName().toString() + "-json.log"))
                         .sorted(Comparator.comparing(Path::toString))
                         .forEach(f -> processHistoricalLogs(containerDir, f));
