@@ -20,6 +20,6 @@ COPY --from=builder /loggerservice/target/*.jar loggerservice.jar
 
 ENV JAVA_OPTS=""
 
-EXPOSE 8088
+EXPOSE 6030
 
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar loggerservice.jar"]
