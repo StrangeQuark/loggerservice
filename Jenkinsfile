@@ -1,5 +1,10 @@
 pipeline {
-    agent { label 'Host PC' }
+    agent { label 'linux-agent' }
+
+    environment {
+        VAULT_URL = credentials('VAULT_URL') // Integration line: Vault
+        CICD_TOKEN = credentials('CICD_TOKEN') // Integration line: Vault
+    }
 
     stages {
         // Integration function start: Vault
@@ -7,8 +12,11 @@ pipeline {
             steps {
                 script {
                     def response = httpRequest(
-                        url: 'http://localhost:6020/api/vault/getVariablesByEnvironment/loggerservice/e3',
+                        url: VAULT_URL + '/api/vault/cicd/loggerservice/e3',
                         httpMode: 'GET',
+                        customHeaders: [
+                            [name: 'X-CICD-TOKEN', value: CICD_TOKEN, maskValue: true]
+                        ],
                         acceptType: 'APPLICATION_JSON'
                     )
 
@@ -19,8 +27,8 @@ pipeline {
                         envFileContent += "${entry.key}=${entry.value}\n"
                     }
 
-                    writeFile file: '.env', text: envFileContent
-                    echo "Environment variables written to .env"
+                    writeFile file: 'loggerservice.env', text: envFileContent
+                    echo "Environment variables written to loggerservice.env"
                 }
             }
         }
@@ -28,10 +36,18 @@ pipeline {
         stage("Deploy") {
             steps {
                 script {
-                    bat "docker-compose --env-file .env up --build --wait"
+                    sh "docker compose --env-file loggerservice.env up --build --wait"
                     echo "All containers are up and healthy."
                 }
             }
         }
     }
+    // Integration function start: Vault
+    post {
+        always {
+            sh "rm -f loggerservice.env"
+            echo "Cleaned up loggerservice.env"
+        }
+    }
+    // Integration function end: Vault
 }
