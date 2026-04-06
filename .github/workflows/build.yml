@@ -1,0 +1,42 @@
+name: LoggerService Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux-agent]
+
+    env:
+      VAULT_URL: ${{ secrets.VAULT_URL }}
+      CICD_TOKEN: ${{ secrets.CICD_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Retrieve Env Vars from Vault
+        run: |
+          echo "Requesting environment variables from Vault..."
+
+          response=$(curl -s \
+            -H "X-CICD-TOKEN: $CICD_TOKEN" \
+            "$VAULT_URL/api/vault/cicd/loggerservice/e3")
+
+          echo "$response" | jq -r 'to_entries | .[] | "\(.key)=\(.value)"' > loggerservice.env
+
+          echo "Environment variables written to loggerservice.env"
+
+      - name: Deploy
+        run: |
+          set -e
+
+          docker compose --env-file loggerservice.env up --build --wait
+          
+          echo "All containers are up and healthy."
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f loggerservice.env
+          echo "Cleaned up loggerservice.env"
