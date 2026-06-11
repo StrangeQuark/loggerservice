@@ -47,7 +47,7 @@ This project includes a `Jenkinsfile` for use in CI/CD pipelines. Jenkins must b
   <br><br>
 
 ## License
-This project is licensed under the GNU General Public License. See `LICENSE.md` for details.
+This project is licensed under the Apache License 2.0. See `LICENSE` for details.
 <br><br>
 
 ## Contributing
