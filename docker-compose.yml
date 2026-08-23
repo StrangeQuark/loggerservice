@@ -27,8 +27,8 @@ services:
     image: opensearchproject/opensearch:2.9.0
     container_name: opensearch
     environment:
-      - discovery.type=${discovery.type}
-      - plugins.security.disabled=${plugins.security.disabled}
+      - discovery.type=${DISCOVERY_TYPE}
+      - plugins.security.disabled=${PLUGINS_SECURITY_DISABLED}
       - OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS}
       - OPENSEARCH_DASHBOARDS_PLUGINS_DISABLED=${OPENSEARCH_DASHBOARDS_PLUGINS_DISABLED}
     ports:
