@@ -9,6 +9,9 @@ services:
     environment:
       - OPENSEARCH_HOST=${OPENSEARCH_HOST}
       - OPENSEARCH_PORT=${OPENSEARCH_PORT}
+      - OPENSEARCH_USERNAME=${OPENSEARCH_USERNAME}
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}
+      - OPENSEARCH_SSL_VERIFICATIONMODE=${OPENSEARCH_SSL_VERIFICATIONMODE}
       - LOG_SCAN_INTERVAL_MS=${LOG_SCAN_INTERVAL_MS}
     depends_on:
       opensearch:
@@ -24,36 +27,36 @@ services:
       start_period: 10s
 
   opensearch:
-    image: opensearchproject/opensearch:2.9.0
+    image: opensearchproject/opensearch:2.19.6
     container_name: opensearch
     environment:
-      - discovery.type=${discovery.type}
-      - plugins.security.disabled=${plugins.security.disabled}
+      - discovery.type=${DISCOVERY_TYPE}
       - OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS}
-      - OPENSEARCH_DASHBOARDS_PLUGINS_DISABLED=${OPENSEARCH_DASHBOARDS_PLUGINS_DISABLED}
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_PASSWORD}
     ports:
-      - "9200:9200"
+      - "127.0.0.1:9200:9200"
     ulimits:
       memlock:
         soft: -1
         hard: -1
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:9200/_cluster/health" ]
+      test: [ "CMD-SHELL", "curl --fail --insecure -u admin:${OPENSEARCH_PASSWORD} https://localhost:9200/_cluster/health" ]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 20s
 
   dashboards:
-    image: opensearchproject/opensearch-dashboards:2.9.0
+    image: opensearchproject/opensearch-dashboards:2.19.6
     container_name: dashboards
     environment:
       - OPENSEARCH_HOSTS=${OPENSEARCH_HOSTS}
       - OPENSEARCH_SSL_VERIFICATIONMODE=${OPENSEARCH_SSL_VERIFICATIONMODE}
-      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=${DISABLE_SECURITY_DASHBOARDS_PLUGIN}
+      - OPENSEARCH_USERNAME=${OPENSEARCH_DASHBOARDS_USERNAME}
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_DASHBOARDS_PASSWORD}
       - OPENSEARCH_DASHBOARDS_I18N_LOCALE=${OPENSEARCH_DASHBOARDS_I18N_LOCALE}
     ports:
-      - "5601:5601"
+      - "127.0.0.1:5601:5601"
     depends_on:
       opensearch:
         condition: service_healthy

@@ -1,7 +1,12 @@
 package com.strangequark.loggerservice;
 
 import jakarta.annotation.PostConstruct;
+import org.apache.http.auth.AuthScope;
 import org.apache.http.HttpHost;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.conn.ssl.NoopHostnameVerifier;
+import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.ssl.SSLContexts;
 import org.opensearch.client.RequestOptions;
 import org.opensearch.client.RestClient;
 import org.opensearch.client.RestHighLevelClient;
@@ -16,7 +21,14 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Base64;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 
 @Service
 public class DashboardsService {
@@ -28,20 +40,57 @@ public class DashboardsService {
 
     private RestHighLevelClient osClient;
     private HttpClient httpClient;
+    private String authorization;
 
     @PostConstruct
     public void init() {
         String osHost = System.getenv().getOrDefault("OPENSEARCH_HOST", "localhost");
         int osPort = Integer.parseInt(System.getenv().getOrDefault("OPENSEARCH_PORT", "9200"));
+        String username = System.getenv().getOrDefault("OPENSEARCH_USERNAME", "admin");
+        String password = System.getenv().getOrDefault("OPENSEARCH_PASSWORD", "");
+        String verificationMode = System.getenv().getOrDefault("OPENSEARCH_SSL_VERIFICATIONMODE", "full");
         String dashboardsHost = System.getenv().getOrDefault("DASHBOARDS_HOST", "dashboards");
         int dashboardsPort = Integer.parseInt(System.getenv().getOrDefault("DASHBOARDS_PORT", "5601"));
 
-        osClient = new RestHighLevelClient(RestClient.builder(new HttpHost(osHost, osPort, "http")));
-        httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(5))
-                .build();
+        authorization = "Basic " + Base64.getEncoder().encodeToString((username + ":" + password).getBytes(StandardCharsets.UTF_8));
 
-        waitForService("OpenSearch", "http://" + osHost + ":" + osPort, 30);
+        BasicCredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+        credentialsProvider.setCredentials(AuthScope.ANY, new UsernamePasswordCredentials(username, password));
+
+        try {
+            if (verificationMode.equals("none")) {
+                SSLContext sslContext = SSLContexts.custom()
+                        .loadTrustMaterial((chain, authType) -> true)
+                        .build();
+
+                osClient = new RestHighLevelClient(
+                        RestClient.builder(new HttpHost(osHost, osPort, "https"))
+                                .setHttpClientConfigCallback(httpClientBuilder -> httpClientBuilder
+                                        .setDefaultCredentialsProvider(credentialsProvider)
+                                        .setSSLContext(sslContext)
+                                        .setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE)
+                                )
+                );
+            } else {
+                osClient = new RestHighLevelClient(
+                        RestClient.builder(new HttpHost(osHost, osPort, "https"))
+                                .setHttpClientConfigCallback(httpClientBuilder -> httpClientBuilder
+                                        .setDefaultCredentialsProvider(credentialsProvider)
+                                )
+                );
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        HttpClient.Builder httpClientBuilder = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5));
+        if (verificationMode.equals("none")) {
+            httpClientBuilder.sslContext(createSslContext());
+        }
+        httpClient = httpClientBuilder.build();
+
+        waitForService("OpenSearch", "https://" + osHost + ":" + osPort, 30);
         ensureIndexExists();
 
         waitForService("Dashboards", "http://" + dashboardsHost + ":" + dashboardsPort + "/api/status", 60);
@@ -58,6 +107,7 @@ public class DashboardsService {
                 HttpRequest request = HttpRequest.newBuilder()
                         .uri(URI.create(url))
                         .timeout(Duration.ofSeconds(5))
+                        .header("Authorization", authorization)
                         .GET()
                         .build();
 
@@ -123,6 +173,7 @@ public class DashboardsService {
                     .timeout(Duration.ofSeconds(10))
                     .header("osd-xsrf", "true")
                     .header("Content-Type", "application/json")
+                    .header("Authorization", authorization)
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .build();
 
@@ -153,6 +204,7 @@ public class DashboardsService {
                     .timeout(Duration.ofSeconds(10))
                     .header("osd-xsrf", "true")
                     .header("Content-Type", "application/json")
+                    .header("Authorization", authorization)
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .build();
 
@@ -167,6 +219,20 @@ public class DashboardsService {
         } catch (Exception e) {
             System.err.println("Error setting default index pattern:");
             e.printStackTrace();
+        }
+    }
+
+    private SSLContext createSslContext() {
+        try {
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, new TrustManager[] {new X509TrustManager() {
+                public void checkClientTrusted(X509Certificate[] chain, String authType) {}
+                public void checkServerTrusted(X509Certificate[] chain, String authType) {}
+                public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+            }}, new SecureRandom());
+            return sslContext;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 }
