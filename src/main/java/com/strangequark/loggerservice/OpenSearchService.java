@@ -12,6 +12,7 @@ import org.opensearch.client.RestHighLevelClient;
 import org.opensearch.client.RestClient;
 import org.opensearch.common.xcontent.XContentType;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import javax.net.ssl.SSLContext;
@@ -20,14 +21,29 @@ import javax.net.ssl.SSLContext;
 public class OpenSearchService {
     private RestHighLevelClient client;
 
+    @Value("${opensearch.host}")
+    private String host;
+
+    @Value("${opensearch.port}")
+    private int port;
+
+    @Value("${opensearch.username}")
+    private String username;
+
+    @Value("${opensearch.password}")
+    private String password;
+
+    @Value("${opensearch.ssl.verification-mode}")
+    private String verificationMode;
+
+    @Value("${service.http.connect.timeout}")
+    private int connectTimeout;
+
+    @Value("${service.http.read.timeout}")
+    private int readTimeout;
+
     @PostConstruct
     public void init() {
-        String host = System.getenv().getOrDefault("OPENSEARCH_HOST", "localhost");
-        int port = Integer.parseInt(System.getenv().getOrDefault("OPENSEARCH_PORT", "9200"));
-        String username = System.getenv().getOrDefault("OPENSEARCH_USERNAME", "admin");
-        String password = System.getenv().getOrDefault("OPENSEARCH_PASSWORD", "");
-        String verificationMode = System.getenv().getOrDefault("OPENSEARCH_SSL_VERIFICATIONMODE", "full");
-
         BasicCredentialsProvider credentialsProvider = new BasicCredentialsProvider();
         credentialsProvider.setCredentials(AuthScope.ANY, new UsernamePasswordCredentials(username, password));
 
@@ -39,6 +55,10 @@ public class OpenSearchService {
 
                 client = new RestHighLevelClient(
                         RestClient.builder(new HttpHost(host, port, "https"))
+                                .setRequestConfigCallback(requestConfigBuilder -> requestConfigBuilder
+                                        .setConnectTimeout(connectTimeout)
+                                        .setSocketTimeout(readTimeout)
+                                )
                                 .setHttpClientConfigCallback(httpClientBuilder -> httpClientBuilder
                                         .setDefaultCredentialsProvider(credentialsProvider)
                                         .setSSLContext(sslContext)
@@ -48,6 +68,10 @@ public class OpenSearchService {
             } else {
                 client = new RestHighLevelClient(
                         RestClient.builder(new HttpHost(host, port, "https"))
+                                .setRequestConfigCallback(requestConfigBuilder -> requestConfigBuilder
+                                        .setConnectTimeout(connectTimeout)
+                                        .setSocketTimeout(readTimeout)
+                                )
                                 .setHttpClientConfigCallback(httpClientBuilder -> httpClientBuilder
                                         .setDefaultCredentialsProvider(credentialsProvider)
                                 )
