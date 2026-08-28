@@ -2,6 +2,9 @@ services:
   logger-service:
     build: .
     container_name: logger-service
+    networks:
+      - shared-network
+      - logger-network
     user: root
     privileged: true
     volumes:
@@ -29,12 +32,12 @@ services:
   opensearch:
     image: opensearchproject/opensearch:2.19.6
     container_name: opensearch
+    networks:
+      - logger-network
     environment:
       - discovery.type=${DISCOVERY_TYPE}
       - OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS}
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_PASSWORD}
-    ports:
-      - "127.0.0.1:9200:9200"
     ulimits:
       memlock:
         soft: -1
@@ -49,6 +52,9 @@ services:
   dashboards:
     image: opensearchproject/opensearch-dashboards:2.19.6
     container_name: dashboards
+    networks:
+      - shared-network
+      - logger-network
     environment:
       - OPENSEARCH_HOSTS=${OPENSEARCH_HOSTS}
       - OPENSEARCH_SSL_VERIFICATIONMODE=${OPENSEARCH_SSL_VERIFICATIONMODE}
@@ -60,3 +66,9 @@ services:
     depends_on:
       opensearch:
         condition: service_healthy
+
+networks:
+  shared-network:
+    external: true
+  logger-network:
+    internal: true
