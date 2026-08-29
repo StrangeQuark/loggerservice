@@ -15,6 +15,7 @@ import org.opensearch.client.indices.GetIndexRequest;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.xcontent.XContentType;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.io.IOException;
 import java.net.URI;
@@ -42,16 +43,35 @@ public class DashboardsService {
     private HttpClient httpClient;
     private String authorization;
 
+    @Value("${opensearch.host}")
+    private String osHost;
+
+    @Value("${opensearch.port}")
+    private int osPort;
+
+    @Value("${opensearch.username}")
+    private String username;
+
+    @Value("${opensearch.password}")
+    private String password;
+
+    @Value("${opensearch.ssl.verification-mode}")
+    private String verificationMode;
+
+    @Value("${dashboards.host}")
+    private String dashboardsHost;
+
+    @Value("${dashboards.port}")
+    private int dashboardsPort;
+
+    @Value("${service.http.connect.timeout}")
+    private int connectTimeout;
+
+    @Value("${service.http.read.timeout}")
+    private int readTimeout;
+
     @PostConstruct
     public void init() {
-        String osHost = System.getenv().getOrDefault("OPENSEARCH_HOST", "localhost");
-        int osPort = Integer.parseInt(System.getenv().getOrDefault("OPENSEARCH_PORT", "9200"));
-        String username = System.getenv().getOrDefault("OPENSEARCH_USERNAME", "admin");
-        String password = System.getenv().getOrDefault("OPENSEARCH_PASSWORD", "");
-        String verificationMode = System.getenv().getOrDefault("OPENSEARCH_SSL_VERIFICATIONMODE", "full");
-        String dashboardsHost = System.getenv().getOrDefault("DASHBOARDS_HOST", "dashboards");
-        int dashboardsPort = Integer.parseInt(System.getenv().getOrDefault("DASHBOARDS_PORT", "5601"));
-
         authorization = "Basic " + Base64.getEncoder().encodeToString((username + ":" + password).getBytes(StandardCharsets.UTF_8));
 
         BasicCredentialsProvider credentialsProvider = new BasicCredentialsProvider();
@@ -65,6 +85,10 @@ public class DashboardsService {
 
                 osClient = new RestHighLevelClient(
                         RestClient.builder(new HttpHost(osHost, osPort, "https"))
+                                .setRequestConfigCallback(requestConfigBuilder -> requestConfigBuilder
+                                        .setConnectTimeout(connectTimeout)
+                                        .setSocketTimeout(readTimeout)
+                                )
                                 .setHttpClientConfigCallback(httpClientBuilder -> httpClientBuilder
                                         .setDefaultCredentialsProvider(credentialsProvider)
                                         .setSSLContext(sslContext)
@@ -74,6 +98,10 @@ public class DashboardsService {
             } else {
                 osClient = new RestHighLevelClient(
                         RestClient.builder(new HttpHost(osHost, osPort, "https"))
+                                .setRequestConfigCallback(requestConfigBuilder -> requestConfigBuilder
+                                        .setConnectTimeout(connectTimeout)
+                                        .setSocketTimeout(readTimeout)
+                                )
                                 .setHttpClientConfigCallback(httpClientBuilder -> httpClientBuilder
                                         .setDefaultCredentialsProvider(credentialsProvider)
                                 )
