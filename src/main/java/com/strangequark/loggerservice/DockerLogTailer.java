@@ -41,24 +41,19 @@ public class DockerLogTailer {
             DOCKER_LOG_DIR.register(watchService, StandardWatchEventKinds.ENTRY_CREATE);
 
             // Tail all existing containers on startup
-            Files.list(DOCKER_LOG_DIR)
-                    .filter(Files::isDirectory)
-                    .forEach(containerDir -> {
-                        try {
-                            Files.list(containerDir)
-                                    .filter(f -> f.getFileName().toString().endsWith("-json.log"))
-                                    .forEach(f -> startTail(containerDir, f));
-                        } catch (IOException e) {
-                            LOGGER.error("Error listing containerDir {}: {}", containerDir, e.getMessage());
-                        }
-                    });
+            try (Stream<Path> containerDirs = Files.list(DOCKER_LOG_DIR)) {
+                containerDirs.filter(Files::isDirectory)
+                        .filter(this::isLogCollectionEnabled)
+                        .forEach(this::startTailingIfNeeded);
+            }
 
             // Watch for new containers
             while (true) {
                 WatchKey key = watchService.take();
                 for (WatchEvent<?> event : key.pollEvents()) {
                     Path newDir = DOCKER_LOG_DIR.resolve((Path) event.context());
-                    startTailingIfNeeded(newDir);
+                    if (Files.isDirectory(newDir))
+                        startTailingIfNeeded(newDir);
                 }
                 key.reset();
             }
@@ -78,7 +73,10 @@ public class DockerLogTailer {
         executor.submit(() -> {
             try {
                 if (Files.exists(logFile)) {
-                    startTail(containerDir, logFile);
+                    if (isLogCollectionEnabled(containerDir))
+                        startTail(containerDir, logFile);
+                    else
+                        LOGGER.info("Skipping log collection for {}", containerDir);
                     return;
                 }
 
@@ -91,7 +89,10 @@ public class DockerLogTailer {
                         for (WatchEvent<?> event : key.pollEvents()) {
                             Path created = containerDir.resolve((Path) event.context());
                             if (created.equals(logFile)) {
-                                startTail(containerDir, logFile);
+                                if (isLogCollectionEnabled(containerDir))
+                                    startTail(containerDir, logFile);
+                                else
+                                    LOGGER.info("Skipping log collection for {}", containerDir);
                                 return;
                             }
                         }
@@ -102,6 +103,23 @@ public class DockerLogTailer {
                 LOGGER.error("Error watching container dir {}: {}", containerDir, e.getMessage());
             }
         });
+    }
+
+    boolean isLogCollectionEnabled(Path containerDir) {
+        try {
+            Path configPath = containerDir.resolve("config.v2.json");
+            if (!Files.exists(configPath))
+                return false;
+
+            JsonNode config = mapper.readTree(Files.readString(configPath));
+            return config.path("Config")
+                    .path("Labels")
+                    .path("com.msinit.log")
+                    .asBoolean(false);
+        } catch (Exception e) {
+            LOGGER.error("Error reading container config {}: {}", containerDir, e.getMessage());
+            return false;
+        }
     }
 
     private void startTail(Path containerDir, Path logFile) {
@@ -176,12 +194,20 @@ public class DockerLogTailer {
         }
     }
 
-    private String resolveServiceName(Path containerDir) {
+    String resolveServiceName(Path containerDir) {
         try {
             Path configPath = containerDir.resolve("config.v2.json");
 
             if (Files.exists(configPath)) {
                 JsonNode cfg = mapper.readTree(Files.readString(configPath));
+
+                String serviceName = cfg.path("Config")
+                        .path("Labels")
+                        .path("com.msinit.service-name")
+                        .asText();
+                if (!serviceName.isEmpty())
+                    return serviceName;
+
                 return cfg.path("Name").asText("").replace("/", "");
             }
         } catch (Exception ex) {
