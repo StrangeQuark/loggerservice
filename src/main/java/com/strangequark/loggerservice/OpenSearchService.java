@@ -10,11 +10,12 @@ import org.opensearch.action.index.IndexRequest;
 import org.opensearch.client.RequestOptions;
 import org.opensearch.client.RestHighLevelClient;
 import org.opensearch.client.RestClient;
-import org.opensearch.common.xcontent.XContentType;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 import javax.net.ssl.SSLContext;
 
 @Service
@@ -82,26 +83,24 @@ public class OpenSearchService {
         }
     }
 
-    public void indexLog(LogEntry entry) {
+    public void indexLog(LogEntry entry, String logId) {
         try {
             IndexRequest request = new IndexRequest("docker-logs")
-                    .source(
-                            String.format("{\"containerId\":\"%s\",\"serviceName\":\"%s\",\"stream\":\"%s\",\"message\":%s,\"timestamp\":\"%s\"}",
-                                    entry.getContainerId(),
-                                    entry.getServiceName(),
-                                    entry.getStream(),
-                                    escapeJson(entry.getMessage()),
-                                    entry.getTimestamp()
-                            ),
-                            XContentType.JSON
-                    );
+                    .id(logId)
+                    .source(getLogSource(entry));
             client.index(request, RequestOptions.DEFAULT);
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    private String escapeJson(String s) {
-        return "\"" + s.replace("\"", "\\\"").replace("\n", "\\n") + "\"";
+    Map<String, Object> getLogSource(LogEntry entry) {
+        Map<String, Object> source = new HashMap<>();
+        source.put("containerId", entry.getContainerId());
+        source.put("serviceName", entry.getServiceName());
+        source.put("stream", entry.getStream());
+        source.put("message", entry.getMessage());
+        source.put("@timestamp", entry.getTimestamp().toString());
+        return source;
     }
 }
