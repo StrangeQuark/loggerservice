@@ -37,7 +37,7 @@ public class DashboardsService {
     private static final String INDEX_NAME = "docker-logs";
     private static final String INDEX_PATTERN_ID = "docker-logs";
     private static final String INDEX_PATTERN_TITLE = "docker-logs";
-    private static final String TIME_FIELD = "timestamp";
+    private static final String TIME_FIELD = "@timestamp";
 
     private RestHighLevelClient osClient;
     private HttpClient httpClient;
