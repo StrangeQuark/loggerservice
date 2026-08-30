@@ -20,6 +20,7 @@ services:
       - SERVICE_HTTP_CONNECT_TIMEOUT=${SERVICE_HTTP_CONNECT_TIMEOUT}
       - SERVICE_HTTP_READ_TIMEOUT=${SERVICE_HTTP_READ_TIMEOUT}
       - LOG_SCAN_INTERVAL_MS=${LOG_SCAN_INTERVAL_MS}
+      - LOG_TAILER_THREAD_COUNT=${LOG_TAILER_THREAD_COUNT}
     depends_on:
       opensearch:
         condition: service_healthy

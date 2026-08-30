@@ -82,9 +82,10 @@ public class OpenSearchService {
         }
     }
 
-    public void indexLog(LogEntry entry) {
+    public void indexLog(LogEntry entry, String logId) {
         try {
             IndexRequest request = new IndexRequest("docker-logs")
+                    .id(logId)
                     .source(
                             String.format("{\"containerId\":\"%s\",\"serviceName\":\"%s\",\"stream\":\"%s\",\"message\":%s,\"timestamp\":\"%s\"}",
                                     entry.getContainerId(),

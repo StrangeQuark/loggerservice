@@ -2,13 +2,18 @@ package com.strangequark.loggerservice;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
@@ -22,9 +27,16 @@ public class DockerLogTailer {
     private final OpenSearchService openSearchService;
     private final ObjectMapper mapper = new ObjectMapper();
     private final Map<Path, Future<?>> activeTails = new ConcurrentHashMap<>();
-    private final ExecutorService executor = Executors.newCachedThreadPool();
+    private ThreadPoolExecutor executor;
+    private Thread watcherThread;
 
     private static final Path DOCKER_LOG_DIR = Paths.get("/var/lib/docker/containers");
+
+    @Value("${logger.scan.interval.ms}")
+    private int logScanInterval;
+
+    @Value("${logger.tailer.thread-count}")
+    private int tailerThreadCount;
 
     public DockerLogTailer(OpenSearchService openSearchService) {
         this.openSearchService = openSearchService;
@@ -32,7 +44,27 @@ public class DockerLogTailer {
 
     @PostConstruct
     public void start() {
-        new Thread(() -> watchContainers(), "docker-log-watcher").start();
+        executor = new ThreadPoolExecutor(
+                tailerThreadCount,
+                tailerThreadCount,
+                0,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(tailerThreadCount)
+        );
+
+        watcherThread = new Thread(() -> watchContainers(), "docker-log-watcher");
+        watcherThread.start();
+    }
+
+    @PreDestroy
+    public void stop() {
+        if (watcherThread != null)
+            watcherThread.interrupt();
+
+        activeTails.forEach((logFile, future) -> future.cancel(true));
+
+        if (executor != null)
+            executor.shutdownNow();
     }
 
     private void watchContainers() {
@@ -57,8 +89,10 @@ public class DockerLogTailer {
                 }
                 key.reset();
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.error("Error watching Docker containers: {}", e.getMessage());
         }
     }
 
@@ -69,40 +103,45 @@ public class DockerLogTailer {
         if (activeTails.containsKey(logFile))
             return;
 
-        // Watch the container directory for the log file if not present
-        executor.submit(() -> {
-            try {
-                if (Files.exists(logFile)) {
-                    if (isLogCollectionEnabled(containerDir))
-                        startTail(containerDir, logFile);
-                    else
-                        LOGGER.info("Skipping log collection for {}", containerDir);
-                    return;
-                }
-
-                LOGGER.info("Waiting for log file to appear: {}", logFile);
-                try (WatchService watchService = FileSystems.getDefault().newWatchService()) {
-                    containerDir.register(watchService, StandardWatchEventKinds.ENTRY_CREATE);
-
-                    while (true) {
-                        WatchKey key = watchService.take();
-                        for (WatchEvent<?> event : key.pollEvents()) {
-                            Path created = containerDir.resolve((Path) event.context());
-                            if (created.equals(logFile)) {
-                                if (isLogCollectionEnabled(containerDir))
-                                    startTail(containerDir, logFile);
-                                else
-                                    LOGGER.info("Skipping log collection for {}", containerDir);
-                                return;
-                            }
-                        }
-                        key.reset();
+        try {
+            // Watch the container directory for the log file if not present
+            executor.submit(() -> {
+                try {
+                    if (Files.exists(logFile)) {
+                        if (isLogCollectionEnabled(containerDir))
+                            startTail(containerDir, logFile);
+                        else
+                            LOGGER.info("Skipping log collection for {}", containerDir);
+                        return;
                     }
+
+                    LOGGER.info("Waiting for log file to appear: {}", logFile);
+                    try (WatchService watchService = FileSystems.getDefault().newWatchService()) {
+                        containerDir.register(watchService, StandardWatchEventKinds.ENTRY_CREATE);
+
+                        while (true) {
+                            WatchKey key = watchService.take();
+                            for (WatchEvent<?> event : key.pollEvents()) {
+                                Path created = containerDir.resolve((Path) event.context());
+                                if (created.equals(logFile)) {
+                                    if (isLogCollectionEnabled(containerDir))
+                                        startTail(containerDir, logFile);
+                                    else
+                                        LOGGER.info("Skipping log collection for {}", containerDir);
+                                    return;
+                                }
+                            }
+                            key.reset();
+                        }
+                    }
+                } catch (Exception e) {
+                    LOGGER.error("Error watching container dir {}: {}", containerDir, e.getMessage());
                 }
-            } catch (Exception e) {
-                LOGGER.error("Error watching container dir {}: {}", containerDir, e.getMessage());
-            }
-        });
+            });
+        } catch (RejectedExecutionException e) {
+            LOGGER.error("Unable to start log tail for {}. Active tails: {}, queued tasks: {}",
+                    logFile, activeTails.size(), executor.getQueue().size());
+        }
     }
 
     boolean isLogCollectionEnabled(Path containerDir) {
@@ -124,18 +163,20 @@ public class DockerLogTailer {
 
     private void startTail(Path containerDir, Path logFile) {
         try {
-            // Process all existing logs first
+            // Process rotated log files before tailing the active log file
             try (Stream<Path> files = Files.list(containerDir)) {
                 LOGGER.info("Processing existing logs: {}", logFile);
                 files.filter(f -> f.getFileName().toString().startsWith(containerDir.getFileName().toString() + "-json.log"))
+                        .filter(f -> !f.equals(logFile))
                         .sorted(Comparator.comparing(Path::toString))
                         .forEach(f -> processHistoricalLogs(containerDir, f));
             }
 
-            // Then tail the active one
-            LOGGER.info("Starting to tail {}", logFile);
+            // Process the active log once, then continue tailing through the same file handle
             Future<?> future = executor.submit(() -> tailFile(containerDir, logFile));
             activeTails.put(logFile, future);
+            LOGGER.info("Starting to tail {}. Active tails: {}, queued tasks: {}",
+                    logFile, activeTails.size(), executor.getQueue().size());
 
         } catch (Exception e) {
             LOGGER.error("Failed to start tail for {}: {}", logFile, e.getMessage());
@@ -161,21 +202,79 @@ public class DockerLogTailer {
     private void tailFile(Path containerDir, Path logFile) {
         String containerId = containerDir.getFileName().toString();
         String serviceName = resolveServiceName(containerDir);
-        try (RandomAccessFile raf = new RandomAccessFile(logFile.toFile(), "r")) {
-            String line;
+
+        RandomAccessFile raf = null;
+        try {
+            raf = new RandomAccessFile(logFile.toFile(), "r");
+            Object fileKey = getFileKey(logFile);
 
             while (true) {
-                line = raf.readLine();
-                if (line == null) {
-                    Thread.sleep(1000); // wait for new data
+                String line = raf.readLine();
+                if (line != null) {
+                    processLine(line, containerId, serviceName);
                     continue;
                 }
-                processLine(line, containerId, serviceName);
+
+                if (!Files.exists(logFile) || !isContainerRunning(containerDir))
+                    return;
+
+                if (hasLogFileChanged(logFile, fileKey)) {
+                    LOGGER.info("Log rotation detected: {}", logFile);
+                    raf.close();
+                    raf = new RandomAccessFile(logFile.toFile(), "r");
+                    fileKey = getFileKey(logFile);
+                    continue;
+                }
+
+                Thread.sleep(logScanInterval);
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
             LOGGER.info("Stopped tailing " + logFile + ": " + e.getMessage());
         } finally {
+            try {
+                if (raf != null)
+                    raf.close();
+            } catch (IOException e) {
+                LOGGER.error("Error closing {}: {}", logFile, e.getMessage());
+            }
+
             activeTails.remove(logFile);
+            LOGGER.info("Stopped tailing {}. Active tails: {}, queued tasks: {}",
+                    logFile, activeTails.size(), executor.getQueue().size());
+        }
+    }
+
+    Object getFileKey(Path logFile) throws IOException {
+        return Files.readAttributes(logFile, BasicFileAttributes.class).fileKey();
+    }
+
+    boolean hasLogFileChanged(Path logFile, Object fileKey) throws IOException {
+        return !Objects.equals(fileKey, getFileKey(logFile));
+    }
+
+    boolean isContainerRunning(Path containerDir) {
+        try {
+            Path configPath = containerDir.resolve("config.v2.json");
+            if (!Files.exists(configPath))
+                return false;
+
+            JsonNode config = mapper.readTree(Files.readString(configPath));
+            return config.path("State").path("Running").asBoolean(false);
+        } catch (Exception e) {
+            LOGGER.error("Error reading container state {}: {}", containerDir, e.getMessage());
+            return false;
+        }
+    }
+
+    String getLogId(String containerId, String line) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest((containerId + ":" + line).getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -188,7 +287,7 @@ public class DockerLogTailer {
             entry.setStream(node.path("stream").asText("stdout"));
             entry.setMessage(node.path("log").asText().trim());
             entry.setTimestamp(Instant.parse(node.path("time").asText()));
-            openSearchService.indexLog(entry);
+            openSearchService.indexLog(entry, getLogId(containerId, line));
         } catch (Exception ex) {
             LOGGER.error(ex.getMessage());
         }
