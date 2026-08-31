@@ -6,7 +6,13 @@ services:
       - shared-network
       - logger-network
     user: root
-    privileged: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     environment:
