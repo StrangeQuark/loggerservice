@@ -28,7 +28,7 @@ services:
       - LOG_SCAN_INTERVAL_MS=${LOG_SCAN_INTERVAL_MS}
       - LOG_TAILER_THREAD_COUNT=${LOG_TAILER_THREAD_COUNT}
     depends_on:
-      opensearch:
+      dashboards:
         condition: service_healthy
     ports:
       - "6030:6030"
@@ -77,6 +77,12 @@ services:
     depends_on:
       opensearch:
         condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "curl --fail --silent -u \"$$OPENSEARCH_USERNAME:$$OPENSEARCH_PASSWORD\" http://localhost:5601/api/status | grep -q '\"state\":\"green\"'" ]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
 
 networks:
   shared-network:

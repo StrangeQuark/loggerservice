@@ -118,36 +118,11 @@ public class DashboardsService {
         }
         httpClient = httpClientBuilder.build();
 
-        waitForService("OpenSearch", "https://" + osHost + ":" + osPort, 30);
         ensureIndexExists();
 
-        waitForService("Dashboards", "http://" + dashboardsHost + ":" + dashboardsPort + "/api/status", 60);
         createIndexPattern(dashboardsHost, dashboardsPort);
 
         setDefaultIndexPattern(dashboardsHost, dashboardsPort);
-    }
-
-    private void waitForService(String name, String url, int timeoutSeconds) {
-        System.out.println("Waiting for " + name + " to become ready...");
-        long start = System.currentTimeMillis();
-        while (System.currentTimeMillis() - start < timeoutSeconds * 1000L) {
-            try {
-                HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(url))
-                        .timeout(Duration.ofSeconds(5))
-                        .header("Authorization", authorization)
-                        .GET()
-                        .build();
-
-                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                if (response.statusCode() < 500) {
-                    System.out.println(name + " is ready.");
-                    return;
-                }
-            } catch (Exception ignored) {}
-            try { Thread.sleep(3000); } catch (InterruptedException ignored) {}
-        }
-        System.err.println("Warning: " + name + " did not become ready within " + timeoutSeconds + " seconds.");
     }
 
     private void ensureIndexExists() {
