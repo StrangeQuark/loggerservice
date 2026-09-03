@@ -12,12 +12,15 @@ pipeline {
             steps {
                 script {
                     def response = httpRequest(
-                        url: VAULT_URL + '/api/vault/cicd/loggerservice/e3',
-                        httpMode: 'GET',
+                        url: VAULT_URL + '/api/vault/cicd',
+                        httpMode: 'POST',
+                        contentType: 'APPLICATION_JSON',
+                        requestBody: '{"serviceName":"loggerservice","environmentName":"e3"}',
                         customHeaders: [
                             [name: 'X-CICD-TOKEN', value: CICD_TOKEN, maskValue: true]
                         ],
-                        acceptType: 'APPLICATION_JSON'
+                        acceptType: 'APPLICATION_JSON',
+                        validResponseCodes: '200'
                     )
 
                     def json = readJSON text: response.content
