@@ -16,6 +16,7 @@ services:
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     environment:
+      - SERVER_PORT=${SERVER_PORT}
       - OPENSEARCH_HOST=${OPENSEARCH_HOST}
       - OPENSEARCH_PORT=${OPENSEARCH_PORT}
       - OPENSEARCH_USERNAME=${OPENSEARCH_USERNAME}
@@ -34,7 +35,7 @@ services:
       - "6030:6030"
     restart: always
     healthcheck:
-      test: [ "CMD-SHELL", "pgrep -f 'loggerservice.jar' > /dev/null || exit 1" ]
+      test: [ "CMD", "curl", "-f", "http://localhost:6030/api/logger/health" ]
       interval: 10s
       timeout: 5s
       retries: 20

@@ -14,6 +14,8 @@ RUN ./mvnw clean package
 # Stage 2: Create minimal runtime image
 FROM eclipse-temurin:21-alpine@sha256:6ea5548706b60ac0a602eaf48af74792cbab012d90e811ca8db6184b16b5c3d6
 
+RUN apk add --no-cache curl
+
 WORKDIR /loggerservice
 
 COPY --from=builder /loggerservice/target/*.jar loggerservice.jar
