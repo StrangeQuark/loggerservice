@@ -16,6 +16,7 @@ services:
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     environment:
+      - SERVER_PORT=${SERVER_PORT}
       - OPENSEARCH_HOST=${OPENSEARCH_HOST}
       - OPENSEARCH_PORT=${OPENSEARCH_PORT}
       - OPENSEARCH_USERNAME=${OPENSEARCH_USERNAME}
@@ -34,14 +35,14 @@ services:
       - "6030:6030"
     restart: always
     healthcheck:
-      test: [ "CMD-SHELL", "pgrep -f 'loggerservice.jar' > /dev/null || exit 1" ]
+      test: [ "CMD", "curl", "-f", "http://localhost:6030/api/logger/health" ]
       interval: 10s
       timeout: 5s
       retries: 20
       start_period: 10s
 
   opensearch:
-    image: opensearchproject/opensearch:2.19.6
+    image: opensearchproject/opensearch:2.19.6@sha256:8690b204fe914c60ca76d451ac73bc0481e034d32d3779944c8caca56a2b003f
     container_name: opensearch
     networks:
       - logger-network
@@ -61,7 +62,7 @@ services:
       start_period: 20s
 
   dashboards:
-    image: opensearchproject/opensearch-dashboards:2.19.6
+    image: opensearchproject/opensearch-dashboards:2.19.6@sha256:7aaefffac1660cab61ecf1e52fdcde6c156587a020dfa9246d529ea5e784dcee
     container_name: dashboards
     networks:
       - shared-network
