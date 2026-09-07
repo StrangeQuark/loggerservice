@@ -183,7 +183,7 @@ public class DockerLogTailer {
         }
     }
 
-    private void processHistoricalLogs(Path containerDir, Path file) {
+    void processHistoricalLogs(Path containerDir, Path file) {
         LOGGER.info("Processing historical logs from {}", file);
         try (BufferedReader reader = Files.newBufferedReader(file)) {
             String line;
@@ -278,7 +278,7 @@ public class DockerLogTailer {
         }
     }
 
-    private void processLine(String line, String containerId, String serviceName) {
+    void processLine(String line, String containerId, String serviceName) {
         try {
             JsonNode node = mapper.readTree(line);
             LogEntry entry = new LogEntry();
