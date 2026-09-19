@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -20,6 +21,7 @@ import java.util.concurrent.*;
 import java.util.stream.Stream;
 
 @Component
+@ConditionalOnProperty(name = "logger.kubernetes.enabled", havingValue = "false", matchIfMissing = true)
 public class DockerLogTailer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DockerLogTailer.class);
