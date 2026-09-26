@@ -45,6 +45,9 @@ jobs:
             echo "Environment variables written to loggerservice.env"
           fi
 
+      - name: Run tests
+        run: ./mvnw clean test
+
       - name: Deploy
         run: |
           set -e
