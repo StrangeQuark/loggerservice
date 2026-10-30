@@ -12,6 +12,7 @@ import org.opensearch.client.RestClient;
 import org.opensearch.client.RestHighLevelClient;
 import org.opensearch.client.indices.CreateIndexRequest;
 import org.opensearch.client.indices.GetIndexRequest;
+import org.opensearch.client.indices.PutMappingRequest;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.xcontent.XContentType;
 import org.springframework.stereotype.Service;
@@ -142,6 +143,8 @@ public class DashboardsService {
                         "containerId": { "type": "keyword" },
                         "serviceName": { "type": "keyword" },
                         "stream": { "type": "keyword" },
+                        "traceId": { "type": "keyword" },
+                        "spanId": { "type": "keyword" },
                         "message": { "type": "text" },
                         "@timestamp": { "type": "date" }
                       }
@@ -149,6 +152,16 @@ public class DashboardsService {
                 """, XContentType.JSON);
                 osClient.indices().create(createRequest, RequestOptions.DEFAULT);
             } else {
+                PutMappingRequest mappingRequest = new PutMappingRequest(INDEX_NAME);
+                mappingRequest.source("""
+                    {
+                      "properties": {
+                        "traceId": { "type": "keyword" },
+                        "spanId": { "type": "keyword" }
+                      }
+                    }
+                """, XContentType.JSON);
+                osClient.indices().putMapping(mappingRequest, RequestOptions.DEFAULT);
                 System.out.println("Index already exists: " + INDEX_NAME);
             }
         } catch (IOException e) {

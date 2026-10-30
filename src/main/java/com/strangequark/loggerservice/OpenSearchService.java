@@ -1,5 +1,8 @@
 package com.strangequark.loggerservice;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.UsernamePasswordCredentials;
@@ -20,6 +23,7 @@ import javax.net.ssl.SSLContext;
 
 @Service
 public class OpenSearchService {
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private RestHighLevelClient client;
 
     @Value("${opensearch.host}")
@@ -101,6 +105,22 @@ public class OpenSearchService {
         source.put("stream", entry.getStream());
         source.put("message", entry.getMessage());
         source.put("@timestamp", entry.getTimestamp().toString());
+
+        if(entry.getMessage() != null && entry.getMessage().startsWith("{")) {
+            try {
+                JsonNode structuredLog = objectMapper.readTree(entry.getMessage());
+                String traceId = structuredLog.path("traceId").asText("");
+                String spanId = structuredLog.path("spanId").asText("");
+
+                if(traceId.matches("[0-9a-f]{32}") && !traceId.equals("00000000000000000000000000000000")) {
+                    source.put("traceId", traceId);
+                    if(spanId.matches("[0-9a-f]{16}") && !spanId.equals("0000000000000000"))
+                        source.put("spanId", spanId);
+                }
+            } catch(JsonProcessingException ex) {
+                // Preserve ordinary text logs, including messages that start with a brace.
+            }
+        }
         return source;
     }
 }
