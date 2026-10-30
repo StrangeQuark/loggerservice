@@ -52,6 +52,35 @@ public class OpenSearchServiceTest {
     }
 
     @Test
+    void structuredLogTraceFieldsAreIndexedWithoutChangingMessageTest() {
+        LogEntry entry = new LogEntry();
+        entry.setMessage("{\"message\":\"request failed\",\"traceId\":\"4bf92f3577b34da6a3ce929d0e0e4736\",\"spanId\":\"00f067aa0ba902b7\",\"stack_trace\":\"error details\"}");
+        entry.setTimestamp(Instant.now());
+
+        Map<String, Object> source = new OpenSearchService().getLogSource(entry);
+
+        assertEquals("4bf92f3577b34da6a3ce929d0e0e4736", source.get("traceId"));
+        assertEquals("00f067aa0ba902b7", source.get("spanId"));
+        assertEquals(entry.getMessage(), source.get("message"));
+    }
+
+    @Test
+    void malformedAndUntracedMessagesRemainSearchableTest() {
+        for(String message : new String[]{"ordinary log", "{invalid json", "{\"message\":\"startup\"}",
+                "{\"traceId\":\"00000000000000000000000000000000\",\"spanId\":\"0000000000000000\"}"}) {
+            LogEntry entry = new LogEntry();
+            entry.setMessage(message);
+            entry.setTimestamp(Instant.now());
+
+            Map<String, Object> source = new OpenSearchService().getLogSource(entry);
+
+            assertEquals(message, source.get("message"));
+            assertFalse(source.containsKey("traceId"));
+            assertFalse(source.containsKey("spanId"));
+        }
+    }
+
+    @Test
     void openSearchFailureDoesNotThrowTest() throws Exception {
         RestHighLevelClient client = mock(RestHighLevelClient.class);
         doThrow(new java.io.IOException("OpenSearch unavailable")).when(client).index(any(), any());
